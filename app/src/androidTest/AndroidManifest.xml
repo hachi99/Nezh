@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+            Test-only synthetic library for LibraryScanBenchmarkTest. Lives in the test APK, in its
+            own process, so queries cross a real process boundary like a SAF provider does.
+            It serves generated names only and writes nothing to storage.
+        -->
+        <provider
+            android:name="com.hachicorp.nezh.library.BenchTreeProvider"
+            android:authorities="com.hachicorp.nezh.test.benchtree"
+            android:exported="true"
+            android:process=":benchtree" />
+
+        <!-- Test-only controllable tree for the library index tests (in-memory, no storage). -->
+        <provider
+            android:name="com.hachicorp.nezh.library.TestTreeProvider"
+            android:authorities="com.hachicorp.nezh.test.tree"
+            android:exported="true"
+            android:process=":testtree" />
+    </application>
+
+</manifest>

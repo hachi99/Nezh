@@ -1,3 +1,73 @@
 <resources>
     <string name="app_name">Nezh</string>
+
+    <!-- Playback controls -->
+    <string name="action_previous">Anterior</string>
+    <string name="action_play">Reproducir</string>
+    <string name="action_pause">Pausar</string>
+    <string name="action_next">Siguiente</string>
+    <string name="nothing_playing">Nada en reproducción</string>
+    <string name="now_playing_indicator">Sonando ahora</string>
+    <string name="untitled_track">Sin título</string>
+
+    <!-- Tabs -->
+    <string name="tab_library">Biblioteca</string>
+    <string name="tab_queue">Cola</string>
+    <string name="tab_folders">Carpetas</string>
+
+    <!-- Library -->
+    <string name="library_empty_no_folders">Elige una o varias carpetas de música para construir tu biblioteca. Nezh solo leerá esas carpetas y sus subcarpetas.</string>
+    <string name="library_empty_no_tracks">No se encontraron archivos de audio en las carpetas autorizadas.</string>
+    <string name="library_scanning">Buscando música…</string>
+    <plurals name="library_track_count">
+        <item quantity="one">%1$d canción</item>
+        <item quantity="other">%1$d canciones</item>
+    </plurals>
+
+    <!-- Queue -->
+    <string name="queue_empty">La cola está vacía. Toca una canción de la biblioteca para empezar.</string>
+
+    <!-- Folders -->
+    <string name="action_add_folder">Añadir carpeta</string>
+    <string name="action_refresh_library">Actualizar biblioteca</string>
+    <string name="action_remove_folder">Quitar</string>
+    <string name="action_reauthorize_folder">Volver a autorizar</string>
+    <string name="folders_empty">No hay carpetas autorizadas.</string>
+    <string name="folder_status_scanning">Buscando música…</string>
+    <plurals name="folder_status_ready">
+        <item quantity="one">%1$d canción</item>
+        <item quantity="other">%1$d canciones</item>
+    </plurals>
+    <string name="folder_status_no_permission">Sin permiso de acceso. Vuelve a autorizarla o quítala.</string>
+    <string name="folder_status_unavailable">No disponible. Puede estar desconectada, movida o eliminada.</string>
+    <plurals name="folder_skipped_directories">
+        <item quantity="one">No se pudo leer %1$d subcarpeta.</item>
+        <item quantity="other">No se pudieron leer %1$d subcarpetas.</item>
+    </plurals>
+    <string name="remove_folder_title">¿Quitar «%1$s» de la biblioteca?</string>
+    <string name="remove_folder_message">Nezh dejará de tener acceso a esta carpeta y sus canciones saldrán de la biblioteca y de la cola. Los archivos no se borran.</string>
+    <string name="action_cancel">Cancelar</string>
+
+    <!-- Library notices -->
+    <string name="notice_folder_already_added">Esa carpeta ya está en la biblioteca.</string>
+    <string name="notice_storage_root_not_allowed">No se puede usar la raíz del almacenamiento. Elige una carpeta de música.</string>
+    <string name="notice_invalid_folder">La ubicación elegida no es una carpeta válida.</string>
+    <string name="notice_permission_not_persisted">Android no permitió conservar el acceso a esa carpeta. Prueba a quitar alguna carpeta que ya no uses.</string>
+    <plurals name="notice_permissions_lost">
+        <item quantity="one">Nezh perdió el acceso a %1$d carpeta. Revisa la pestaña Carpetas.</item>
+        <item quantity="other">Nezh perdió el acceso a %1$d carpetas. Revisa la pestaña Carpetas.</item>
+    </plurals>
+    <string name="notice_save_failed">No se pudo guardar la lista de carpetas.</string>
+
+    <!-- Playback messages -->
+    <plurals name="playback_skipped">
+        <item quantity="one">Se omitió un archivo que no se puede reproducir: %2$s</item>
+        <item quantity="other">Se omitieron %1$d archivos que no se pueden reproducir. Último: %2$s</item>
+    </plurals>
+    <string name="error_file">No se pudo reproducir «%1$s».</string>
+    <string name="error_permission">Nezh ya no tiene acceso a la carpeta de «%1$s». Vuelve a autorizarla en Carpetas.</string>
+    <string name="error_other">La reproducción se detuvo por un error. Pulsa reproducir para reintentar.</string>
+    <string name="service_unavailable">El servicio de reproducción no está disponible.</string>
+    <string name="action_retry">Reintentar</string>
+    <string name="error_picker_unavailable">No hay ninguna aplicación disponible para elegir carpetas.</string>
 </resources>
