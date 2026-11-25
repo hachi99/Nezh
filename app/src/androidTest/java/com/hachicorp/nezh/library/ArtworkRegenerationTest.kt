@@ -183,6 +183,19 @@ class ArtworkRegenerationTest {
         val regenerated = libraryTrack(trackA)!!
         assertTrue(File(regenerated.artworkUri!!.toUri().path!!).isFile)
 
+        // Audio output can take over a second to start (measured on a Moto G7 Plus with Bluetooth
+        // A2DP: position still 0 at +1.2 s after play()), so measure once audio is really playing.
+        waitUntil("playback started") { onMain { player!!.isPlaying && player!!.currentPosition > 300 } }
+        // From here on, the track is loaded and playing: any position jump is an interruption.
+        val discontinuities = AtomicInteger()
+        onMain {
+            player!!.addListener(object : Player.Listener {
+                override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
+                    discontinuities.incrementAndGet()
+                }
+            })
+        }
+
         // Playback was not interrupted: playing, advancing, no error, decoder set up once.
         val position1 = onMain { player!!.currentPosition }
         SystemClock.sleep(700)
@@ -194,6 +207,7 @@ class ArtworkRegenerationTest {
             assertTrue("position advances", p.currentPosition > position1)
         }
         assertEquals(1, decoderInits)
+        assertEquals("no position jumps while playing", 0, discontinuities.get())
 
         // The regenerated cover is what the session loads now, from an existing file.
         val freshRecorder = RecordingLoader()

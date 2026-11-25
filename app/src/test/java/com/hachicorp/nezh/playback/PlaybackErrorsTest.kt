@@ -1,6 +1,8 @@
 package com.hachicorp.nezh.playback
 
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.IOException
@@ -59,5 +61,40 @@ class PlaybackErrorsTest {
         assertEquals(0, maxConsecutiveSkips(0))
         assertEquals(0, maxConsecutiveSkips(1))
         assertEquals(4, maxConsecutiveSkips(5))
+    }
+
+    @Test
+    fun errorStageFollowsTheMedia3CodeGroups() {
+        assertEquals(PlaybackErrorStage.READ_FILE, stageOf(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND))
+        assertEquals(PlaybackErrorStage.READ_FILE, stageOf(PlaybackException.ERROR_CODE_IO_NO_PERMISSION))
+        assertEquals(PlaybackErrorStage.CONTAINER, stageOf(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED))
+        assertEquals(PlaybackErrorStage.CONTAINER, stageOf(PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED))
+        assertEquals(PlaybackErrorStage.DECODER, stageOf(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED))
+        assertEquals(PlaybackErrorStage.DECODER, stageOf(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED))
+        assertEquals(PlaybackErrorStage.OTHER, stageOf(PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED))
+        assertEquals(PlaybackErrorStage.OTHER, stageOf(PlaybackException.ERROR_CODE_UNSPECIFIED))
+    }
+
+    @Test
+    fun unsupportedAudioTrackIsInaudible() {
+        // What ExoPlayer reports for an ALAC M4A on a device without an ALAC decoder:
+        // the audio track exists but is not selected.
+        assertEquals("audio/alac", inaudibleReason(tracksKnown = true, audioSelected = false, audioFormats = listOf(MimeTypes.AUDIO_ALAC)))
+    }
+
+    @Test
+    fun selectedAudioTrackIsAudible() {
+        assertNull(inaudibleReason(tracksKnown = true, audioSelected = true, audioFormats = listOf(MimeTypes.AUDIO_AAC)))
+    }
+
+    @Test
+    fun unknownTracksAreNotInaudible() {
+        // While a file is being prepared its tracks are empty: nothing to judge yet.
+        assertNull(inaudibleReason(tracksKnown = false, audioSelected = false, audioFormats = emptyList()))
+    }
+
+    @Test
+    fun fileWithoutAudioIsInaudible() {
+        assertEquals("no audio track", inaudibleReason(tracksKnown = true, audioSelected = false, audioFormats = emptyList()))
     }
 }

@@ -110,6 +110,24 @@ class ArtworkCacheTest {
     }
 
     @Test
+    fun playingACoverRecordsItsAccessAtMostOncePerInterval() {
+        val cache = manager()
+        val hash = cache.put(cover(300, 300, seed = 35))!!
+        val storedAt = db.artworkDao().get(hash)!!.lastAccessedAt
+
+        // Track changes shortly after: no write (each write re-reads the whole library).
+        cache.setInUse(hash)
+        cache.setInUse(null)
+        cache.setInUse(hash)
+        assertEquals(storedAt, db.artworkDao().get(hash)!!.lastAccessedAt)
+
+        // Once the recorded access is old enough, playing it refreshes the LRU position.
+        now += ArtworkCacheManager.TOUCH_INTERVAL_MS
+        cache.setInUse(hash)
+        assertTrue(db.artworkDao().get(hash)!!.lastAccessedAt > storedAt)
+    }
+
+    @Test
     fun coverLargerThanTheWholeBudgetIsNotStored() {
         val cache = manager(budget = 1_000)
         val hash = cache.put(cover(600, 600, seed = 40))

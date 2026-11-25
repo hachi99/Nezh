@@ -80,13 +80,21 @@ class ArtworkCacheManager(
         return hash
     }
 
-    /** Marks the cover of the playing track ([hash], or none) as in use and refreshes its access time. */
+    /**
+     * Marks the cover of the playing track ([hash], or none) as in use and refreshes its access
+     * time. The access time is only written when it is older than [TOUCH_INTERVAL_MS]: every
+     * write to the artwork table makes the library re-read and re-sort every track, and doing that
+     * on each track change was measurable work for nothing (eviction order within an hour does not
+     * matter, and the cover in use is protected in memory anyway).
+     */
     fun setInUse(hash: String?) {
         synchronized(lock) {
             inUse.clear()
             if (hash != null) {
                 inUse += hash
-                artworkDao.touch(hash, clock())
+                val now = clock()
+                val row = artworkDao.get(hash)
+                if (row != null && now - row.lastAccessedAt >= TOUCH_INTERVAL_MS) artworkDao.touch(hash, now)
             }
         }
     }
@@ -155,6 +163,8 @@ class ArtworkCacheManager(
     companion object {
         private const val TAG = "ArtworkCache"
         const val DEFAULT_BUDGET_BYTES = 100L * 1024 * 1024
+        /** Minimum age of a cover's access time before playing it records a new one. */
+        const val TOUCH_INTERVAL_MS = 60L * 60 * 1000
         private const val CHUNK = 500
     }
 }

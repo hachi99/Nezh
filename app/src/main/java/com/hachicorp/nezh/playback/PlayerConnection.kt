@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 
-data class QueueItem(val id: String, val title: String)
+data class QueueItem(val id: String, val title: String, val artworkUri: String? = null)
 
 /**
  * Read-only view of the queue for the UI. Backed by an immutable player [Timeline] snapshot, so a
@@ -43,8 +43,27 @@ data class QueueItem(val id: String, val title: String)
 class QueueSnapshot private constructor(
     private val timeline: Timeline?,
     private val items: List<QueueItem>?,
+    /** True when the player plays this queue in shuffle order. */
+    val shuffled: Boolean = false,
 ) {
     val size: Int = timeline?.windowCount ?: items!!.size
+
+    /**
+     * Queue indices in the order they play: the queue order, or the shuffle order when [shuffled]
+     * (as the session publishes it). Computed once per snapshot, on first use.
+     */
+    val playOrder: IntArray by lazy {
+        val t = timeline
+        if (!shuffled || t == null || t.isEmpty) return@lazy IntArray(size) { it }
+        val order = IntArray(size)
+        var i = t.getFirstWindowIndex(true)
+        var n = 0
+        while (i != C.INDEX_UNSET && n < size) {
+            order[n++] = i
+            i = t.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, true)
+        }
+        if (n == size) order else IntArray(size) { it } // defensive: never lose an entry
+    }
 
     fun isEmpty(): Boolean = size == 0
     fun isNotEmpty(): Boolean = size > 0
@@ -52,12 +71,16 @@ class QueueSnapshot private constructor(
     operator fun get(index: Int): QueueItem {
         items?.let { return it[index] }
         val item = timeline!!.getWindow(index, Timeline.Window()).mediaItem
-        return QueueItem(id = item.mediaId, title = item.displayTitle().orEmpty())
+        return QueueItem(
+            id = item.mediaId,
+            title = item.displayTitle().orEmpty(),
+            artworkUri = item.mediaMetadata.artworkUri?.toString(),
+        )
     }
 
     companion object {
         val EMPTY = QueueSnapshot(null, emptyList())
-        internal fun of(timeline: Timeline) = QueueSnapshot(timeline, null)
+        internal fun of(timeline: Timeline, shuffled: Boolean = false) = QueueSnapshot(timeline, null, shuffled)
         /** For previews and tests. */
         fun of(items: List<QueueItem>) = QueueSnapshot(null, items)
     }
@@ -75,10 +98,16 @@ data class PlaybackUiState(
     val currentArtist: String? = null,
     val currentAlbum: String? = null,
     val showPlayButton: Boolean = true,
+    /** Shuffle is on: the queue plays in [QueueSnapshot.playOrder]. */
+    val shuffleEnabled: Boolean = false,
+    /** Player.REPEAT_MODE_OFF, _ALL or _ONE. */
+    val repeatMode: Int = Player.REPEAT_MODE_OFF,
     /** Files skipped because they could not be played, since the last user action. */
     val skippedCount: Int = 0,
     /** Title of the most recently skipped file, when [skippedCount] > 0. */
     val lastSkippedTitle: String? = null,
+    /** Why the most recently skipped file could not be played (stage and Media3 code). */
+    val lastSkipped: PlaybackErrorReport? = null,
     /** The error that stopped playback, until the user acts or playback resumes. */
     val error: PlaybackErrorReport? = null,
 )
@@ -108,14 +137,28 @@ class PlayerConnection(context: Context) {
     // with a queue of thousands of broken files).
     private var skippedCount = 0
     private var lastSkippedTitle: String? = null
+    private var lastSkipped: PlaybackErrorReport? = null
     private var error: PlaybackErrorReport? = null
     private var cachedQueue: QueueSnapshot = QueueSnapshot.EMPTY
+    /** When the user last asked to play tracks, until playback starts (performance log only). */
+    private var playRequestedAt = 0L
 
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             // A new queue snapshot is only needed when the playlist changed (B7).
-            val queueChanged = events.contains(Player.EVENT_TIMELINE_CHANGED)
+            // The play order shown also changes when shuffle is turned on or off.
+            val queueChanged = events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)
             if (player.isPlaying) error = null
+            // A stop message is about one item: once another item is current, it no longer applies
+            // (e.g. "next" from Bluetooth or the lock screen). Matched by id, not by the event
+            // alone: the message and the transition to its own item can arrive in either order.
+            if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) && error?.mediaId != player.currentMediaItem?.mediaId) {
+                error = null
+            }
+            if (player.isPlaying && playRequestedAt != 0L) {
+                Log.i(PERF_TAG, "playStart afterMs=${SystemClock.elapsedRealtime() - playRequestedAt}")
+                playRequestedAt = 0L
+            }
             publishState(rebuildQueue = queueChanged)
         }
     }
@@ -135,6 +178,7 @@ class PlayerConnection(context: Context) {
                 PlaybackService.ACTION_ITEM_SKIPPED -> {
                     skippedCount++
                     lastSkippedTitle = args.getString(PlaybackService.EXTRA_TITLE).orEmpty()
+                    lastSkipped = PlaybackErrorReport.fromBundle(args)
                 }
                 PlaybackService.ACTION_PLAYBACK_STOPPED -> {
                     error = PlaybackErrorReport.fromBundle(args)
@@ -217,8 +261,13 @@ class PlayerConnection(context: Context) {
             } catch (e: CancellationException) {
                 return@addListener
             }
-            if (sessionResult.resultCode == SessionResult.RESULT_SUCCESS && connected.playerError != null) {
-                error = PlaybackErrorReport.fromBundle(sessionResult.extras)
+            // The service only returns a report while playback is stopped by one: a player error,
+            // or a file that cannot sound (no player error, the player is paused).
+            val report = if (sessionResult.resultCode == SessionResult.RESULT_SUCCESS) {
+                PlaybackErrorReport.fromBundle(sessionResult.extras)
+            } else null
+            if (report != null) {
+                error = report
                 publishState(rebuildQueue = false)
             }
         }, ContextCompat.getMainExecutor(appContext))
@@ -232,6 +281,7 @@ class PlayerConnection(context: Context) {
     suspend fun playTracks(tracks: List<Track>, startIndex: Int) {
         if (startIndex !in tracks.indices) return
         val start = SystemClock.elapsedRealtime()
+        playRequestedAt = start
         val items = withContext(Dispatchers.Default) { tracks.map { it.toMediaItem() } }
         Log.i(PERF_TAG, "playTracks items=${items.size} buildMs=${SystemClock.elapsedRealtime() - start} (background)")
         val c = controller ?: run {
@@ -267,6 +317,124 @@ class PlayerConnection(context: Context) {
             it.seekToDefaultPosition(index)
             it.play()
         }
+    }
+
+    /**
+     * Adds [track] at the end of the queue without touching what is playing: the current item,
+     * its position and the order of the queued items are kept, and duplicates are allowed.
+     *
+     * With no active queue (empty, or finished), the track starts playing, as choosing music in
+     * Nezh always does when nothing is queued. Returns false if the service is not connected.
+     */
+    fun addToQueue(track: Track): Boolean {
+        val c = controller ?: return false
+        val item = track.toMediaItem()
+        when {
+            c.mediaItemCount == 0 -> startPlayback(c, listOf(item), 0)
+            c.playbackState == Player.STATE_ENDED -> {
+                // Otherwise "play" would restart the finished last track instead of the new one.
+                c.addMediaItem(item)
+                c.seekToDefaultPosition(c.mediaItemCount - 1)
+                c.play()
+            }
+            else -> c.addMediaItem(item)
+        }
+        return true
+    }
+
+    /**
+     * Queue edits from the UI. Each one names the [QueueSnapshot] the user was looking at and is
+     * ignored if the playlist changed since, so a stale index never touches the wrong item. The
+     * current item is never removed or moved, and nothing else can become current, so playback is
+     * never interrupted, restarted or moved by these edits.
+     */
+    fun removeFromQueue(snapshot: QueueSnapshot, index: Int): Boolean {
+        val c = editableController(snapshot) ?: return false
+        if (index !in 0 until c.mediaItemCount || index == c.currentMediaItemIndex) return false
+        c.removeMediaItem(index)
+        return true
+    }
+
+    /** Moves an upcoming item to another upcoming position (after the current item). */
+    fun moveInQueue(snapshot: QueueSnapshot, from: Int, to: Int): Boolean {
+        val c = editableController(snapshot) ?: return false
+        // With shuffle on, moving in the queue would not change what plays next: not offered.
+        if (c.shuffleModeEnabled) return false
+        val upcoming = c.currentMediaItemIndex + 1 until c.mediaItemCount
+        if (from == to || from !in upcoming || to !in upcoming) return false
+        c.moveMediaItem(from, to)
+        return true
+    }
+
+    /** Removes every item after the current one; the current item keeps playing. */
+    fun clearUpcoming(snapshot: QueueSnapshot): Boolean {
+        val c = editableController(snapshot) ?: return false
+        if (snapshot.shuffled) {
+            // Upcoming in play order: everything after the current track in the shuffle order.
+            val order = snapshot.playOrder
+            val at = order.indexOf(c.currentMediaItemIndex)
+            if (at < 0 || at + 1 >= order.size) return false
+            removeIndices(c, order.copyOfRange(at + 1, order.size))
+            return true
+        }
+        val first = c.currentMediaItemIndex + 1
+        if (first >= c.mediaItemCount) return false
+        c.removeMediaItems(first, c.mediaItemCount)
+        return true
+    }
+
+    /** Removes the given queue indices, highest first, in as few contiguous ranges as possible. */
+    private fun removeIndices(c: MediaController, indices: IntArray) {
+        val sorted = indices.sortedArrayDescending()
+        var i = 0
+        while (i < sorted.size) {
+            var low = sorted[i]
+            val high = sorted[i]
+            while (i + 1 < sorted.size && sorted[i + 1] == low - 1) { i++; low = sorted[i] }
+            c.removeMediaItems(low, high + 1)
+            i++
+        }
+    }
+
+    /** Playback position of the current track, in ms (0 if nothing is loaded). */
+    fun positionMs(): Long = controller?.currentPosition ?: 0L
+
+    /** Duration of the current track in ms, or 0 while unknown. */
+    fun durationMs(): Long = controller?.duration?.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
+
+    fun seekTo(positionMs: Long) {
+        val c = controller ?: return
+        clearMessages()
+        c.seekTo(positionMs.coerceAtLeast(0))
+    }
+
+    /** The document being played (its URI travels in the request metadata), for lyrics and info. */
+    fun currentDocumentUri(): android.net.Uri? = controller?.currentMediaItem?.requestMetadata?.mediaUri
+
+    /** Format of the audio stream the player is actually playing, as reported by the player. */
+    fun currentAudioFormat(): androidx.media3.common.Format? {
+        val c = controller ?: return null
+        val group = c.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected } ?: return null
+        val track = (0 until group.length).firstOrNull { group.isTrackSelected(it) } ?: return null
+        return group.getTrackFormat(track)
+    }
+
+    /** Turns shuffle on or off. The current track keeps playing at its position. */
+    fun toggleShuffle() {
+        val c = controller ?: return
+        c.shuffleModeEnabled = !c.shuffleModeEnabled
+    }
+
+    /** Repeat off → repeat the whole queue → repeat the current track → off. */
+    fun cycleRepeatMode() {
+        val c = controller ?: return
+        c.repeatMode = nextRepeatMode(c.repeatMode)
+    }
+
+    private fun editableController(snapshot: QueueSnapshot): MediaController? {
+        val c = controller ?: return null
+        if (snapshot !== cachedQueue || c.mediaItemCount != snapshot.size) return null
+        return c
     }
 
     /**
@@ -308,6 +476,7 @@ class PlayerConnection(context: Context) {
         if (skippedCount == 0 && error == null) return
         skippedCount = 0
         lastSkippedTitle = null
+        lastSkipped = null
         error = null
         publishState(rebuildQueue = false)
     }
@@ -316,12 +485,12 @@ class PlayerConnection(context: Context) {
     private fun publishState(rebuildQueue: Boolean) {
         val c = controller ?: run {
             // Events received before onControllerReady: keep messages, wait for the controller.
-            _state.update { it.copy(skippedCount = skippedCount, lastSkippedTitle = lastSkippedTitle, error = error) }
+            _state.update { it.copy(skippedCount = skippedCount, lastSkippedTitle = lastSkippedTitle, lastSkipped = lastSkipped, error = error) }
             return
         }
         val count = c.mediaItemCount
         if (rebuildQueue || cachedQueue.size != count) {
-            cachedQueue = QueueSnapshot.of(c.currentTimeline)
+            cachedQueue = QueueSnapshot.of(c.currentTimeline, c.shuffleModeEnabled)
         }
         val hasCurrent = count > 0 && c.currentMediaItemIndex in 0 until count
         val metadata = c.mediaMetadata // includes tags read from the file once prepared
@@ -336,14 +505,24 @@ class PlayerConnection(context: Context) {
             currentArtist = if (hasCurrent) metadata.artist?.toString() else null,
             currentAlbum = if (hasCurrent) metadata.albumTitle?.toString() else null,
             showPlayButton = Util.shouldShowPlayButton(c),
+            shuffleEnabled = c.shuffleModeEnabled,
+            repeatMode = c.repeatMode,
             skippedCount = skippedCount,
             lastSkippedTitle = lastSkippedTitle,
+            lastSkipped = lastSkipped,
             error = error,
         )
     }
 
-    private companion object {
-        const val TAG = "PlayerConnection"
+    internal companion object {
+        /** Repeat off → repeat the whole queue → repeat the current track → off. */
+        fun nextRepeatMode(mode: Int): Int = when (mode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+
+        private const val TAG = "PlayerConnection"
         const val PERF_TAG = "NezhPerf"
 
         fun MediaItem.isAllowedBy(filter: QueueFilter): Boolean {

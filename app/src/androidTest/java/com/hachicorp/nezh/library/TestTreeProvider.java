@@ -120,7 +120,8 @@ public class TestTreeProvider extends ContentProvider {
             for (Map.Entry<String, long[]> e : children.entrySet()) {
                 String path = e.getKey();
                 String mime = path.endsWith(".mp3") ? "audio/mpeg"
-                        : path.endsWith(".flac") ? "audio/flac" : "application/octet-stream";
+                        : path.endsWith(".flac") ? "audio/flac"
+                        : path.endsWith(".m4a") ? "audio/mp4" : "application/octet-stream";
                 add(cursor, columns, path, mime, e.getValue()[0], e.getValue()[1]);
             }
         }

@@ -10,3 +10,11 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+# Kotlin standard library multifile facade parts (e.g. kotlin.collections.CollectionsKt__*) inherit
+# from each other with package-private visibility. With the partial optimization configured in
+# app/build.gradle.kts (packageScope), R8 repackaged one part (CollectionsKt__MutableCollectionsJVMKt)
+# out of kotlin.collections while its package-private superclass (CollectionsKt__IterablesKt) stayed
+# there, so the release build crashed at startup with IllegalAccessError. Keeping the names keeps
+# each part in its package; the parts can still be shrunk and optimized.
+-keep,allowshrinking,allowoptimization class kotlin.**Kt__*

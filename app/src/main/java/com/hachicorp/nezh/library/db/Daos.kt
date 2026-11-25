@@ -79,8 +79,8 @@ data class MetadataRequest(
 @Dao
 interface TrackDao {
     /**
-     * Every source of every track, in display order (folder order, then collation order).
-     * The same track can appear once per folder; the repository keeps the first.
+     * Every source of every track, in folder order, then path collation order. The same track can
+     * appear once per folder; the repository keeps the first, then sorts the library by title.
      */
     @Query(
         """

@@ -3,6 +3,9 @@ package com.hachicorp.nezh.playback
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
 import android.os.Process
 import android.util.Log
 import androidx.annotation.OptIn
@@ -10,6 +13,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
@@ -23,6 +27,9 @@ import com.google.common.util.concurrent.ListenableFuture
 import androidx.media3.datasource.DataSourceBitmapLoader
 import com.hachicorp.nezh.MainActivity
 import com.hachicorp.nezh.NezhApplication
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Owns the [ExoPlayer] and its [MediaSession]. Playback lives here so it is independent from the
@@ -31,27 +38,57 @@ import com.hachicorp.nezh.NezhApplication
  * The service is exported so the system UI, Bluetooth and other controllers can bind to it.
  * Controllers from other apps (identified by UID, which Binder provides and cannot be spoofed) only
  * get transport controls and read-only state; only Nezh itself can change the queue or settings.
+ *
+ * Threading: the player and the session live on a dedicated thread ([playbackThread]), not on the
+ * main thread. Loading a queue of thousands of tracks (creating one media source per track and
+ * publishing the queue to the platform session) took ~0.6 s of main-thread time on a Moto G7 Plus
+ * in release, freezing the UI; on this thread it does not block the UI. Every access to the player
+ * or the session, and every player and session callback, happens on that thread. The UI talks to
+ * the session through a MediaController on the main thread, as before.
  */
 class PlaybackService : MediaSessionService() {
 
+    private val playbackThread = HandlerThread("NezhPlayback", Process.THREAD_PRIORITY_DEFAULT)
+    private lateinit var playerHandler: Handler
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Set once in [onCreate] (main thread), read by [onGetSession] on the main thread. */
+    @Volatile
     private var mediaSession: MediaSession? = null
 
-    /** The classified error that stopped playback, if the player is currently in an error state. */
-    private var stoppedBy: PlaybackErrorReport? = null
+    /** Owns the "playback stopped by an error" state; the session only reads it. Player thread only. */
+    private var errorRecovery: ErrorRecovery? = null
 
     @OptIn(UnstableApi::class) // setBitmapLoader
     override fun onCreate() {
         super.onCreate()
-        val player = buildNezhPlayer(this)
-        player.addListener(ErrorRecovery(player))
+        playbackThread.start()
+        playerHandler = Handler(playbackThread.looper)
+        // The session must exist when onCreate returns (onGetSession follows right away), so the
+        // main thread waits for it; this is the same work it used to do itself.
+        mediaSession = onPlayerThread {
+            val player = buildNezhPlayer(this, playbackThread.looper)
+            player.addListener(ErrorRecovery(player).also { errorRecovery = it })
+            player.addListener(CurrentTrackReporter { id -> (application as NezhApplication).library.onPlaybackTrackChanged(id) })
+            MediaSession.Builder(this, player)
+                .setCallback(SessionCallback())
+                .setSessionActivity(createSessionActivity())
+                .setBitmapLoader(createBitmapLoader())
+                .build()
+        }
+    }
 
-        player.addListener(CurrentTrackReporter { id -> (application as NezhApplication).library.onPlaybackTrackChanged(id) })
-
-        mediaSession = MediaSession.Builder(this, player)
-            .setCallback(SessionCallback())
-            .setSessionActivity(createSessionActivity())
-            .setBitmapLoader(createBitmapLoader())
-            .build()
+    /** Runs [block] on the player thread and waits for its result (main thread → player thread). */
+    private fun <T> onPlayerThread(block: () -> T): T {
+        if (Looper.myLooper() == playbackThread.looper) return block()
+        val result = AtomicReference<Result<T>>()
+        val done = CountDownLatch(1)
+        playerHandler.post {
+            result.set(runCatching(block))
+            done.countDown()
+        }
+        check(done.await(PLAYER_THREAD_TIMEOUT_S, TimeUnit.SECONDS)) { "The player thread did not respond" }
+        return result.get().getOrThrow()
     }
 
     @OptIn(UnstableApi::class)
@@ -62,24 +99,35 @@ class PlaybackService : MediaSessionService() {
         mediaSession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = mediaSession?.player
-        val playbackOngoing = player != null &&
-            player.playWhenReady &&
-            player.mediaItemCount > 0 &&
-            player.playbackState != Player.STATE_ENDED
-        if (!playbackOngoing) {
-            player?.pause()
-            stopSelf()
+        val session = mediaSession ?: return
+        playerHandler.post {
+            val player = session.player
+            val playbackOngoing = player.playWhenReady &&
+                player.mediaItemCount > 0 &&
+                player.playbackState != Player.STATE_ENDED
+            if (!playbackOngoing) {
+                player.pause()
+                mainHandler.post { stopSelf() }
+            }
         }
     }
 
     override fun onDestroy() {
-        mediaSession?.run {
-            player.release()
-            release()
-        }
-        (application as NezhApplication).library.onPlaybackTrackChanged(null)
+        val session = mediaSession
         mediaSession = null
+        // Orderly shutdown on the player's own thread: player, then session, then the thread.
+        if (session != null) {
+            try {
+                onPlayerThread {
+                    session.player.release()
+                    session.release()
+                }
+            } catch (e: RuntimeException) {
+                Log.e(TAG, "Could not release the player and session", e)
+            }
+        }
+        playbackThread.quitSafely()
+        (application as NezhApplication).library.onPlaybackTrackChanged(null)
         super.onDestroy()
     }
 
@@ -98,7 +146,7 @@ class PlaybackService : MediaSessionService() {
     private fun isTrusted(controller: MediaSession.ControllerInfo): Boolean =
         controller.uid == Process.myUid()
 
-    /** Sends an event to Nezh's own UI controllers only; never to external controllers. */
+    /** Sends an event to Nezh's own UI controllers only; never to external controllers. Player thread. */
     @OptIn(UnstableApi::class)
     private fun notifyNezhControllers(command: SessionCommand, args: Bundle) {
         val session = mediaSession ?: return
@@ -107,6 +155,7 @@ class PlaybackService : MediaSessionService() {
             .forEach { session.sendCustomCommand(it, command, args) }
     }
 
+    /** Called by Media3 on the player thread. */
     private inner class SessionCallback : MediaSession.Callback {
 
         @OptIn(UnstableApi::class)
@@ -136,7 +185,7 @@ class PlaybackService : MediaSessionService() {
             args: Bundle,
         ): ListenableFuture<SessionResult> {
             if (customCommand.customAction == ACTION_GET_ERROR && isTrusted(controller)) {
-                val extras = stoppedBy?.toBundle() ?: Bundle.EMPTY
+                val extras = errorRecovery?.stoppedBy?.toBundle() ?: Bundle.EMPTY
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS, extras))
             }
             return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
@@ -165,6 +214,14 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    /** Why playback is stopped, as owned by [ErrorRecovery]. */
+    private sealed interface Stop {
+        val report: PlaybackErrorReport
+
+        data class PlayerError(override val report: PlaybackErrorReport) : Stop
+        data class Inaudible(override val report: PlaybackErrorReport) : Stop
+    }
+
     /**
      * Skips past files that cannot be played; stops on any other error.
      *
@@ -177,53 +234,109 @@ class PlaybackService : MediaSessionService() {
         /** Index we moved to by skipping; that transition must not reset the counter. */
         private var skipTargetIndex = C.INDEX_UNSET
 
+        /**
+         * Why playback stopped, while it is stopped by a failure; null otherwise. One value, so a
+         * report and the way it ends cannot disagree:
+         * - [Stop.PlayerError]: the player is in an error state; ends when it leaves it (a retry).
+         * - [Stop.Inaudible]: a file without decodable audio; the player is only paused, so it ends
+         *   when audio plays or another item becomes current.
+         */
+        private var stop: Stop? = null
+
+        /** The report a reconnecting Nezh UI is given. */
+        val stoppedBy: PlaybackErrorReport? get() = stop?.report
+
         override fun onPlayerError(error: PlaybackException) {
             val kind = error.kind()
-            val title = player.currentMediaItem?.displayTitle().orEmpty()
             Log.w(
                 TAG,
                 "Playback error at item ${player.currentMediaItemIndex}: ${error.errorCodeName}, " +
                     "kind=$kind, cause=${rootCauseName(error)}",
             )
+            onFailure(report(kind, stageOf(error.errorCode), error.errorCodeName))
+        }
+
+        /**
+         * ExoPlayer raises no error when no decoder on the device can play a file's audio (e.g.
+         * ALAC where the device has no ALAC decoder): it leaves the track unselected and "plays"
+         * silence on its own clock. Treated as an unsupported format, like a decoder error.
+         */
+        override fun onTracksChanged(tracks: Tracks) {
+            if (player.playbackState != Player.STATE_IDLE) checkAudible(tracks)
+        }
+
+        /** Reports and skips or pauses when [tracks] cannot produce sound. False if it did. */
+        private fun checkAudible(tracks: Tracks): Boolean {
+            val reason = inaudibleReason(tracks) ?: return true
+            Log.w(TAG, "No playable audio at item ${player.currentMediaItemIndex}: $reason")
+            val code = "${PlaybackException.getErrorCodeName(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED)}: $reason"
+            onFailure(
+                report(PlaybackErrorKind.FILE, PlaybackErrorStage.DECODER, code),
+                inaudible = true,
+            )
+            return false
+        }
+
+        private fun onFailure(report: PlaybackErrorReport, inaudible: Boolean = false) {
             // Skip only while the user wants playback: when paused or stopped, preparing the next
             // file would keep the chain going (measured: pausing did not stop it on a queue of
             // broken files), so the error stays on the current file and is reported instead.
-            val canSkip = kind == PlaybackErrorKind.FILE &&
+            val canSkip = report.kind == PlaybackErrorKind.FILE &&
                 player.playWhenReady &&
                 consecutiveSkips < maxConsecutiveSkips(player.mediaItemCount) &&
                 player.hasNextMediaItem()
             if (canSkip) {
                 consecutiveSkips++
-                notifyNezhControllers(ITEM_SKIPPED_COMMAND, Bundle().apply { putString(EXTRA_TITLE, title) })
+                notifyNezhControllers(ITEM_SKIPPED_COMMAND, report.toBundle())
                 // Set before seeking, in case the transition is reported synchronously.
                 skipTargetIndex = player.nextMediaItemIndex
                 player.seekToNextMediaItem()
                 player.prepare()
             } else {
-                val report = PlaybackErrorReport(kind, title)
-                stoppedBy = report
+                // An inaudible file leaves the player READY: pause it so it does not run silently.
+                if (inaudible) player.pause()
+                stop = if (inaudible) Stop.Inaudible(report) else Stop.PlayerError(report)
                 notifyNezhControllers(PLAYBACK_STOPPED_COMMAND, report.toBundle())
             }
         }
 
+        /** A report about the current item, which it names and identifies. */
+        private fun report(kind: PlaybackErrorKind, stage: PlaybackErrorStage, code: String): PlaybackErrorReport {
+            val item = player.currentMediaItem
+            return PlaybackErrorReport(kind, item?.displayTitle().orEmpty(), stage, code, item?.mediaId.orEmpty())
+        }
+
         override fun onPlayerErrorChanged(error: PlaybackException?) {
-            if (error == null) stoppedBy = null
+            if (error == null && stop is Stop.PlayerError) stop = null
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (isPlaying) consecutiveSkips = 0
+            if (!isPlaying) return
+            val tracks = player.currentTracks
+            if (tracks.isTypeSelected(C.TRACK_TYPE_AUDIO)) {
+                consecutiveSkips = 0
+                clearInaudibleStop()
+            } else if (player.playWhenReady) {
+                // Play pressed again on a file that cannot sound (its tracks did not change).
+                checkAudible(tracks)
+            }
         }
 
-        /** Id of the current item, to ignore metadata-only updates of the same item. */
-        private var currentMediaId: String? = null
+        private fun clearInaudibleStop() {
+            if (stop is Stop.Inaudible) stop = null
+        }
+
+        /** The queue entry last seen as current ([currentQueueEntry]). */
+        private var currentEntry: Any? = null
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            val sameItem = mediaItem?.mediaId == currentMediaId &&
-                reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
-            currentMediaId = mediaItem?.mediaId
-            // TitleFallback re-describes the current item; that is not a new item and must not
-            // reset the counter (otherwise a queue of broken files could loop).
-            if (sameItem) return
+            val entry = player.currentQueueEntry()
+            // A playlist change that keeps the same queue entry only re-describes it: not a move.
+            // A new queue is a new entry even when it starts on the same track (same media id).
+            val sameEntry = entry == currentEntry && reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+            currentEntry = entry
+            if (sameEntry) return
+            clearInaudibleStop()
             if (player.currentMediaItemIndex == skipTargetIndex) {
                 skipTargetIndex = C.INDEX_UNSET
             } else {
@@ -239,12 +352,17 @@ class PlaybackService : MediaSessionService() {
 
     companion object {
         private const val TAG = "PlaybackService"
+        /** Generous: building or releasing the player takes milliseconds. */
+        private const val PLAYER_THREAD_TIMEOUT_S = 10L
 
         internal const val ACTION_ITEM_SKIPPED = "com.hachicorp.nezh.ITEM_SKIPPED"
         internal const val ACTION_PLAYBACK_STOPPED = "com.hachicorp.nezh.PLAYBACK_STOPPED"
         internal const val ACTION_GET_ERROR = "com.hachicorp.nezh.GET_ERROR"
         internal const val EXTRA_TITLE = "title"
         internal const val EXTRA_KIND = "kind"
+        internal const val EXTRA_STAGE = "stage"
+        internal const val EXTRA_CODE = "code"
+        internal const val EXTRA_MEDIA_ID = "mediaId"
 
         /** Session → Nezh UI: a file failed and was skipped. */
         internal val ITEM_SKIPPED_COMMAND = SessionCommand(ACTION_ITEM_SKIPPED, Bundle.EMPTY)
@@ -281,17 +399,37 @@ class PlaybackService : MediaSessionService() {
 }
 
 /** A classified error, as sent to Nezh's UI. */
-data class PlaybackErrorReport(val kind: PlaybackErrorKind, val title: String) {
+data class PlaybackErrorReport(
+    val kind: PlaybackErrorKind,
+    val title: String,
+    /** Where it failed: reading the file, the container, the decoder... */
+    val stage: PlaybackErrorStage = PlaybackErrorStage.OTHER,
+    /** Media3 error code name, e.g. ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED (diagnostics). */
+    val code: String = "",
+    /** Queue item the error is about; the UI drops the message once another item is current. */
+    val mediaId: String = "",
+) {
     fun toBundle(): Bundle = Bundle().apply {
         putString(PlaybackService.EXTRA_KIND, kind.name)
         putString(PlaybackService.EXTRA_TITLE, title)
+        putString(PlaybackService.EXTRA_STAGE, stage.name)
+        putString(PlaybackService.EXTRA_CODE, code)
+        putString(PlaybackService.EXTRA_MEDIA_ID, mediaId)
     }
 
     companion object {
         fun fromBundle(bundle: Bundle): PlaybackErrorReport? {
             val kindName = bundle.getString(PlaybackService.EXTRA_KIND) ?: return null
             val kind = PlaybackErrorKind.entries.firstOrNull { it.name == kindName } ?: return null
-            return PlaybackErrorReport(kind, bundle.getString(PlaybackService.EXTRA_TITLE).orEmpty())
+            val stage = PlaybackErrorStage.entries.firstOrNull { it.name == bundle.getString(PlaybackService.EXTRA_STAGE) }
+                ?: PlaybackErrorStage.OTHER
+            return PlaybackErrorReport(
+                kind,
+                bundle.getString(PlaybackService.EXTRA_TITLE).orEmpty(),
+                stage,
+                bundle.getString(PlaybackService.EXTRA_CODE).orEmpty(),
+                bundle.getString(PlaybackService.EXTRA_MEDIA_ID).orEmpty(),
+            )
         }
     }
 }

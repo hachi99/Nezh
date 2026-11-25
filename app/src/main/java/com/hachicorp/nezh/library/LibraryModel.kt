@@ -87,10 +87,16 @@ data class LibraryState(
     /** False until the stored folders have been read and their permissions checked. */
     val loaded: Boolean = false,
     val folders: List<LibraryFolder> = emptyList(),
+    /** Library tracks in display order: by title, see [TitleOrder]. */
     val tracks: List<Track> = emptyList(),
+    /** Alphabetical separators of [tracks]: contiguous, in order, covering every track. */
+    val sections: List<TrackSection> = emptyList(),
     val notice: LibraryNotice? = null,
 ) {
     val isScanning: Boolean get() = folders.any { it.status == FolderStatus.SCANNING }
+
+    /** Tracks by id, built on first use (not part of equality). */
+    val tracksById: Map<String, Track> by lazy { tracks.associateBy { it.id } }
 
     /** Folders whose permission is held; tracks from other folders cannot be played. */
     val permittedFolders: Set<FolderKey>

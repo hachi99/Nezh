@@ -301,7 +301,11 @@ class MusicLibrary(
             if (!has && folder.lastScanStatus != FolderScanStatus.NO_PERMISSION) {
                 folderDao.setStatus(folder.id, FolderScanStatus.NO_PERMISSION)
                 if (previous == null || key in previous) lost++
-            } else if (has && folder.lastScanStatus == FolderScanStatus.NO_PERMISSION) {
+            } else if (has && folder.lastScanStatus == FolderScanStatus.NO_PERMISSION && (previous == null || key !in previous)) {
+                // Regained = the grant was missing from what we knew and is back. NO_PERMISSION with
+                // a grant we already had means the provider refused the scan (SecurityException at
+                // the root): rescanning now would fail the same way, without pause. That folder is
+                // retried on the next refresh, app start or re-authorization instead.
                 folderDao.setStatus(folder.id, FolderScanStatus.NEVER_SCANNED)
                 regained += folder.id
             }
@@ -413,7 +417,12 @@ class MusicLibrary(
                 artworkUri = row.artworkFile?.let { Uri.fromFile(File(artworkDirectory, it)).toString() },
             )
         }
-        return LibraryState(loaded = true, folders = libraryFolders, tracks = tracks, notice = notice)
+        val sortStart = SystemClock.elapsedRealtime()
+        val (sorted, sections) = TitleOrder.sort(tracks)
+        if (sorted.size >= SORT_LOG_THRESHOLD) {
+            Log.i(PERF_TAG, "library sort tracks=${sorted.size} ms=${SystemClock.elapsedRealtime() - sortStart}")
+        }
+        return LibraryState(loaded = true, folders = libraryFolders, tracks = sorted, sections = sections, notice = notice)
     }
 
     private companion object {
@@ -422,5 +431,7 @@ class MusicLibrary(
         const val PERF_TAG = "NezhPerf"
         /** Tracks whose size/date the provider does not report are re-read this often. */
         const val FULL_RECONCILE_INTERVAL_MS = 7L * 24 * 60 * 60 * 1000
+        /** Sorting time is logged for large libraries only. */
+        const val SORT_LOG_THRESHOLD = 1000
     }
 }

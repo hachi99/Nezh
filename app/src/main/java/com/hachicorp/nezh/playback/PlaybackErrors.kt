@@ -1,6 +1,8 @@
 package com.hachicorp.nezh.playback
 
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Tracks
 
 /** What a playback error means for Nezh. */
 enum class PlaybackErrorKind {
@@ -33,6 +35,25 @@ internal fun classifyPlaybackError(errorCode: Int, causes: Sequence<Throwable>):
     else -> PlaybackErrorKind.OTHER
 }
 
+/** Where in the pipeline a playback error happened. Shown to the user with the Media3 code. */
+enum class PlaybackErrorStage {
+    /** Opening or reading the document (missing, unreadable, permission). */
+    READ_FILE,
+    /** Container/extractor: unsupported or malformed file structure. */
+    CONTAINER,
+    /** Decoder: the audio format cannot be decoded on this device, or decoding failed. */
+    DECODER,
+    OTHER,
+}
+
+/** Media3 error codes are grouped: 2xxx I/O, 3xxx parsing, 4xxx decoding. */
+internal fun stageOf(errorCode: Int): PlaybackErrorStage = when (errorCode) {
+    in 2000..2999 -> PlaybackErrorStage.READ_FILE
+    in 3000..3999 -> PlaybackErrorStage.CONTAINER
+    in 4000..4999 -> PlaybackErrorStage.DECODER
+    else -> PlaybackErrorStage.OTHER
+}
+
 internal fun PlaybackException.kind(): PlaybackErrorKind =
     classifyPlaybackError(errorCode, generateSequence(cause) { it.cause }.take(MAX_CAUSE_DEPTH))
 
@@ -43,3 +64,23 @@ private const val MAX_CAUSE_DEPTH = 16
  * can be tried once, so a queue of broken files stops instead of looping (even with repeat on).
  */
 internal fun maxConsecutiveSkips(queueSize: Int): Int = (queueSize - 1).coerceAtLeast(0)
+
+/**
+ * Why the current file would play without sound, or null when an audio track is selected or the
+ * tracks are not known yet. ExoPlayer selects no audio track when no decoder supports the format
+ * and then advances silently instead of failing. Returns the audio MIME types found (for example
+ * "audio/alac"), or "no audio track".
+ */
+internal fun inaudibleReason(tracks: Tracks): String? = inaudibleReason(
+    tracksKnown = !tracks.isEmpty,
+    audioSelected = tracks.isTypeSelected(C.TRACK_TYPE_AUDIO),
+    audioFormats = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        .flatMap { group -> (0 until group.length).map { group.getTrackFormat(it).sampleMimeType ?: "unknown audio format" } },
+)
+
+/** [audioFormats]: sample MIME type of every audio track in the file (empty: no audio track). */
+internal fun inaudibleReason(tracksKnown: Boolean, audioSelected: Boolean, audioFormats: List<String>): String? = when {
+    !tracksKnown || audioSelected -> null
+    audioFormats.isEmpty() -> "no audio track"
+    else -> audioFormats.distinct().joinToString()
+}

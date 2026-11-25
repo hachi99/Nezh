@@ -3,12 +3,14 @@ package com.hachicorp.nezh.playback
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -26,11 +28,16 @@ internal const val EXTRA_FILE_TITLE = "com.hachicorp.nezh.FILE_TITLE"
  * Constant-bitrate seeking is enabled for streams with no seek information (raw ADTS AAC, AMR):
  * without it those files are not seekable at all (measured: ADTS `.aac` reported seekable=false).
  * MP3 already uses constant-bitrate seeking by default when it has no Xing/VBRI header.
+ *
+ * [looper] is the player's application thread: every call to the player, and every listener
+ * callback, happens on it. The service uses a dedicated thread (see PlaybackService); tests may use
+ * the calling thread's looper (the default).
  */
 @OptIn(UnstableApi::class)
-internal fun buildNezhPlayer(context: Context): ExoPlayer {
+internal fun buildNezhPlayer(context: Context, looper: Looper? = null): ExoPlayer {
     val extractors = DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)
     val player = ExoPlayer.Builder(context)
+        .apply { if (looper != null) setLooper(looper) }
         .setMediaSourceFactory(DefaultMediaSourceFactory(context, extractors))
         .setAudioAttributes(
             AudioAttributes.Builder()
@@ -43,7 +50,26 @@ internal fun buildNezhPlayer(context: Context): ExoPlayer {
         .setWakeMode(C.WAKE_MODE_LOCAL)
         .build()
     player.addListener(TitleFallback(player))
+    // Shuffle plays the queue in Nezh's order (see NezhShuffleOrder); the queue itself is unchanged.
+    player.setShuffleOrder(NezhShuffleOrder.startingAt(C.INDEX_UNSET, 0, { player.currentMediaItemIndex }))
+    player.addListener(ShuffleFromCurrentTrack(player))
     return player
+}
+
+/**
+ * Turning shuffle on starts a new random order from the current track: it keeps playing (no
+ * restart, same position) and every other track follows once, in random order. Without this the
+ * current track would sit at an arbitrary place in the order, and the tracks before it would not
+ * play. Setting the order only changes what comes next; playback is not interrupted.
+ */
+@OptIn(UnstableApi::class)
+private class ShuffleFromCurrentTrack(private val player: ExoPlayer) : Player.Listener {
+    override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+        if (!shuffleModeEnabled || player.mediaItemCount == 0) return
+        player.setShuffleOrder(
+            NezhShuffleOrder.startingAt(player.currentMediaItemIndex, player.mediaItemCount, { player.currentMediaItemIndex })
+        )
+    }
 }
 
 /**
@@ -69,6 +95,15 @@ internal fun Track.toMediaItem(): MediaItem = MediaItem.Builder()
             .build()
     )
     .build()
+
+/**
+ * Identity of the current queue entry: a position in the queue, not the track (media id), since a
+ * track can be queued twice. It stays the same when the entry's metadata is replaced in place
+ * (TitleFallback: same URI) and is new for every other entry, including a new queue that starts
+ * on the same track. Null when the queue is empty. Pinned by CurrentItemIdentityTest.
+ */
+internal fun Player.currentQueueEntry(): Any? =
+    if (currentTimeline.isEmpty) null else currentTimeline.getWindow(currentMediaItemIndex, Timeline.Window()).uid
 
 internal fun MediaItem.fileTitle(): String? = mediaMetadata.extras?.getString(EXTRA_FILE_TITLE)
 

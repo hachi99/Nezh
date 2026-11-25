@@ -10,6 +10,7 @@ import com.hachicorp.nezh.library.db.MetadataState
 import com.hachicorp.nezh.playback.toMediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -257,6 +258,66 @@ class LibraryIndexTest {
         assertEquals(1, reads["lib/a.mp3"]!!.get())
     }
 
+    /** Counts the scans that start (folder status turning to scanning) while [block] runs. */
+    private fun countScans(stack: TestLibrary, block: () -> Unit): Int {
+        val started = AtomicInteger()
+        val watcher = stack.scope.launch {
+            var scanning = false
+            stack.library.state.collect { state ->
+                if (state.isScanning && !scanning) started.incrementAndGet()
+                scanning = state.isScanning
+            }
+        }
+        block()
+        watcher.cancel()
+        return started.get()
+    }
+
+    /**
+     * A6 (audit): the provider denies access to the folder root (SecurityException) while the
+     * persisted grant is still there. Before the fix this rescanned without pause (129 scans in
+     * 4 s on the Moto G7 Plus). It must be scanned once and then left alone until a later
+     * trigger (refresh, app start, re-authorization).
+     */
+    @Test
+    fun aRootThatDeniesAccessIsScannedOnceNotInALoop() {
+        setTree("!deny:lib\nlib/a.mp3|1|1")
+        val permissions = FakePermissions()
+        val stack = newStack(permissions)
+        runBlocking(Dispatchers.Main) { stack.library.load() }
+        val scans = countScans(stack) {
+            runBlocking(Dispatchers.Main) { stack.library.addFolder(tree("lib")) }
+            SystemClock.sleep(4_000)
+        }
+        val folder = stack.db.folderDao().getAll().single()
+        assertEquals("scans started in 4 s (status ${folder.lastScanStatus})", 1, scans)
+        assertTrue("the persisted grant is kept", FolderKey(TestTreeProvider.AUTHORITY, "lib") in permissions.granted)
+        assertTrue("no grant released", permissions.released.isEmpty())
+    }
+
+    @Test
+    fun aDeniedRootKeepsTheIndexedTracksAndIsRetriedOnlyOnRefresh() {
+        setTree("lib/a.mp3|1|1\nlib/b.mp3|2|2")
+        val stack = newStack(FakePermissions())
+        addAndScan(stack, "lib")
+        assertEquals(2, stack.db.trackDao().count())
+
+        setTree("!deny:lib\nlib/a.mp3|1|1\nlib/b.mp3|2|2") // the provider starts refusing the root
+        val deniedScans = countScans(stack) {
+            runBlocking(Dispatchers.Main) { stack.library.refresh() }
+            SystemClock.sleep(3_000)
+        }
+        assertEquals("one scan per refresh, no retry loop", 1, deniedScans)
+        assertEquals("indexed tracks kept", 2, stack.db.trackDao().count())
+
+        setTree("lib/a.mp3|1|1\nlib/b.mp3|2|2") // access works again
+        val since = System.currentTimeMillis()
+        runBlocking(Dispatchers.Main) { stack.library.refresh() }
+        val recovered = awaitScanned(stack, since)
+        assertEquals(listOf("Tag a", "Tag b"), titles(recovered))
+        assertEquals(FolderScanStatus.COMPLETE, stack.db.folderDao().getAll().single().lastScanStatus)
+    }
+
     @Test
     fun nestedFoldersAreDeduplicatedAndRemovingOneKeepsTheOther() {
         setTree("lib/a.mp3|1|1\nlib/Rock/r.mp3|2|2")
@@ -299,6 +360,22 @@ class LibraryIndexTest {
         assertEquals(listOf("broken song", "untagged song"), titles(state))
         val broken = stack.db.trackDao().getTrack(TrackIdentity.of(TestTreeProvider.AUTHORITY, "lib/broken song.mp3"))!!
         assertEquals(MetadataState.FAILED, broken.metadataState)
+    }
+
+    @Test
+    fun orderAndSeparatorsFollowEachScan() {
+        // Untagged files are titled by file name; tagged ones by their tag ("Tag …").
+        setTree("lib/zeta untagged.mp3|1|1\nlib/b.mp3|2|2")
+        val stack = newStack()
+        val first = addAndScan(stack, "lib")
+        assertEquals(listOf("Tag b", "zeta untagged"), titles(first))
+        assertEquals(listOf("T", "Z"), first.sections.map { it.label })
+
+        setTree("lib/zeta untagged.mp3|1|1\nlib/b.mp3|2|2\nlib/ábaco untagged.mp3|3|3\nlib/2 untagged.mp3|4|4")
+        val after = rescan(stack)
+        assertEquals(listOf("ábaco untagged", "Tag b", "zeta untagged", "2 untagged"), titles(after))
+        assertEquals(listOf("A", "T", "Z", "#"), after.sections.map { it.label })
+        assertEquals(listOf(0, 1, 2, 3), after.sections.map { it.start })
     }
 
     @Test

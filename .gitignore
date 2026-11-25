@@ -37,3 +37,16 @@ desktop.ini
 *.tmp
 *.temp
 *.log
+
+# Python bytecode (tools/fixtures scripts)
+__pycache__/
+*.py[cod]
+
+# Packaged binaries outside build/ (copied or pulled for manual testing)
+*.apk
+*.aab
+
+# Device traces and heap dumps pulled while diagnosing
+*.trace
+*.perfetto-trace
+*.hprof

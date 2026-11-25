@@ -6,13 +6,20 @@
     <string name="action_play">Reproducir</string>
     <string name="action_pause">Pausar</string>
     <string name="action_next">Siguiente</string>
+    <string name="action_shuffle">Aleatorio</string>
+    <string name="shuffle_on">Activado</string>
+    <string name="shuffle_off">Desactivado</string>
+    <string name="action_repeat">Repetir</string>
+    <string name="repeat_off">Desactivado</string>
+    <string name="repeat_all">Toda la cola</string>
+    <string name="repeat_one">Una canción</string>
+    <string name="queue_shuffled_note">Aleatorio: la cola se muestra en el orden en que va a sonar. Para reordenarla, desactiva el aleatorio.</string>
     <string name="nothing_playing">Nada en reproducción</string>
     <string name="now_playing_indicator">Sonando ahora</string>
     <string name="untitled_track">Sin título</string>
 
     <!-- Tabs -->
     <string name="tab_library">Biblioteca</string>
-    <string name="tab_queue">Cola</string>
     <string name="tab_folders">Carpetas</string>
 
     <!-- Library -->
@@ -24,8 +31,29 @@
         <item quantity="other">%1$d canciones</item>
     </plurals>
 
+    <string name="library_sort_by_title">Nombre ↑</string>
+    <string name="library_sorted_by_title_description">Ordenada por nombre, de la A a la Z</string>
+    <string name="action_track_options">Opciones de «%1$s»</string>
+    <string name="action_add_to_queue">Agregar a la cola</string>
+    <string name="added_to_queue">Agregada a la cola: %1$s</string>
+    <string name="index_jump_to">Ir a las canciones con %1$s</string>
+
     <!-- Queue -->
     <string name="queue_empty">La cola está vacía. Toca una canción de la biblioteca para empezar.</string>
+    <string name="queue_previous">Anteriores</string>
+    <string name="queue_now_playing">Sonando</string>
+    <plurals name="queue_upcoming">
+        <item quantity="one">A continuación · %1$d</item>
+        <item quantity="other">A continuación · %1$d</item>
+    </plurals>
+    <string name="queue_upcoming_empty">No hay canciones a continuación.</string>
+    <string name="action_clear_upcoming">Limpiar</string>
+    <string name="clear_upcoming_title">¿Quitar las canciones que siguen?</string>
+    <string name="clear_upcoming_message">La canción actual seguirá sonando. Los archivos no se borran.</string>
+    <string name="action_remove_from_queue">Quitar «%1$s» de la cola</string>
+    <string name="action_reorder">Mantén pulsado y arrastra para reordenar</string>
+    <string name="action_move_up">Subir</string>
+    <string name="action_move_down">Bajar</string>
 
     <!-- Folders -->
     <string name="action_add_folder">Añadir carpeta</string>
@@ -61,13 +89,31 @@
 
     <!-- Playback messages -->
     <plurals name="playback_skipped">
-        <item quantity="one">Se omitió un archivo que no se puede reproducir: %2$s</item>
-        <item quantity="other">Se omitieron %1$d archivos que no se pueden reproducir. Último: %2$s</item>
+        <item quantity="one">Se omitió un archivo que no se puede reproducir: %2$s — %3$s</item>
+        <item quantity="other">Se omitieron %1$d archivos que no se pueden reproducir. Último: %2$s — %3$s</item>
     </plurals>
-    <string name="error_file">No se pudo reproducir «%1$s».</string>
+    <string name="error_file">No se pudo reproducir «%1$s»: %2$s.</string>
+    <string name="error_stage_read">no se pudo abrir o leer el archivo</string>
+    <string name="error_stage_container">formato no compatible o archivo dañado</string>
+    <string name="error_stage_decoder">el audio no se puede decodificar en este dispositivo</string>
+    <string name="error_stage_other">error de reproducción</string>
     <string name="error_permission">Nezh ya no tiene acceso a la carpeta de «%1$s». Vuelve a autorizarla en Carpetas.</string>
     <string name="error_other">La reproducción se detuvo por un error. Pulsa reproducir para reintentar.</string>
     <string name="service_unavailable">El servicio de reproducción no está disponible.</string>
     <string name="action_retry">Reintentar</string>
     <string name="error_picker_unavailable">No hay ninguna aplicación disponible para elegir carpetas.</string>
+    <!-- Now Playing -->
+    <string name="now_playing_title">Ahora suena</string>
+    <string name="action_now_playing">Ahora suena</string>
+    <string name="action_open_now_playing">Abrir Ahora suena</string>
+    <string name="action_back_to_library">Volver a la biblioteca</string>
+    <string name="action_technical_info">Información técnica</string>
+    <string name="queue_sheet_title">Cola</string>
+    <string name="lyrics_show">Mostrar letra</string>
+    <string name="lyrics_hide">Ocultar letra</string>
+    <string name="lyrics_empty">Esta canción no tiene letra guardada en el archivo.</string>
+    <string name="seek_description">Posición de reproducción</string>
+    <string name="tech_stream_header">Flujo de audio (confirmado por el reproductor)</string>
+    <string name="tech_file_header">Archivo</string>
+    <string name="tech_unavailable">No hay información técnica disponible para esta canción.</string>
 </resources>

@@ -6,7 +6,8 @@ import androidx.media3.common.Player
 /**
  * Reports the current track (media id = track id) whenever it changes, so the library can protect
  * its cached cover while it is in use and regenerate the cover if it had been evicted.
- * Metadata-only updates of the same item (e.g. TitleFallback) are not reported again.
+ * This is about the track, not the queue entry ([currentQueueEntry]): the same track again (queued
+ * twice, repeated, or a new queue starting on it) keeps its cover in use and is not reported again.
  */
 internal class CurrentTrackReporter(private val onTrackChanged: (String?) -> Unit) : Player.Listener {
     private var lastId: String? = null
