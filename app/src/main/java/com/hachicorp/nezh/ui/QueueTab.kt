@@ -360,7 +360,7 @@ private fun QueueRow(
             IconButton(onClick = onRemove) {
                 Icon(
                     painter = painterResource(R.drawable.ic_close),
-                    contentDescription = stringResource(R.string.action_remove_from_queue, item.title),
+                    contentDescription = stringResource(R.string.action_remove_from_queue, titleOrUntitled(item.title)),
                 )
             }
         }

@@ -23,6 +23,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.hachicorp.nezh.library.FolderKey
 import com.hachicorp.nezh.library.QueueFilter
 import com.hachicorp.nezh.library.Track
+import com.hachicorp.nezh.library.resolveTitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -495,7 +496,7 @@ class PlayerConnection(context: Context) {
         val hasCurrent = count > 0 && c.currentMediaItemIndex in 0 until count
         val metadata = c.mediaMetadata // includes tags read from the file once prepared
         // Tag title when present; the file-name title until the tags are read or if there is none.
-        val title = metadata.title?.toString()?.takeIf { it.isNotBlank() } ?: c.currentMediaItem?.displayTitle()
+        val title = resolveTitle(metadata.title?.toString(), c.currentMediaItem?.displayTitle())
         _state.value = PlaybackUiState(
             connection = ConnectionStatus.CONNECTED,
             queue = cachedQueue,

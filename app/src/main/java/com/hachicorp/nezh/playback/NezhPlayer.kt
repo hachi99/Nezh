@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
 import com.hachicorp.nezh.library.Track
+import com.hachicorp.nezh.library.resolveTitle
 
 /** MediaMetadata extra holding the title derived from the file name (fallback only). */
 internal const val EXTRA_FILE_TITLE = "com.hachicorp.nezh.FILE_TITLE"
@@ -108,8 +109,7 @@ internal fun Player.currentQueueEntry(): Any? =
 internal fun MediaItem.fileTitle(): String? = mediaMetadata.extras?.getString(EXTRA_FILE_TITLE)
 
 /** Title to show for a queue item: its title if known, else the file-name title. */
-internal fun MediaItem.displayTitle(): String? =
-    mediaMetadata.title?.toString()?.takeIf { it.isNotBlank() } ?: fileTitle()
+internal fun MediaItem.displayTitle(): String? = resolveTitle(mediaMetadata.title?.toString(), fileTitle())
 
 /**
  * Once the current file's tags are known, gives it the file-name title if it has no title tag, so
@@ -119,9 +119,10 @@ internal fun MediaItem.displayTitle(): String? =
 private class TitleFallback(private val player: Player) : Player.Listener {
     override fun onTracksChanged(tracks: Tracks) {
         if (tracks.isEmpty) return
-        if (!player.mediaMetadata.title.isNullOrBlank()) return
         val item = player.currentMediaItem ?: return
-        val fallback = item.fileTitle() ?: return
+        val current = player.mediaMetadata.title?.toString()
+        val fallback = resolveTitle(current, item.fileTitle()) ?: return
+        if (fallback == current) return // the file has its own title
         val updated = item.buildUpon()
             .setMediaMetadata(item.mediaMetadata.buildUpon().setTitle(fallback).build())
             .build()

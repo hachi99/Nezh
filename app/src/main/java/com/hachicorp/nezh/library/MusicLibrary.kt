@@ -406,7 +406,7 @@ class MusicLibrary(
             tracks += Track(
                 id = row.id,
                 documentUri = row.documentUri,
-                title = row.title ?: fileTitle,
+                title = resolveTitle(row.title, fileTitle) ?: fileTitle,
                 relativePath = "${entity.name}/${row.innerPath}",
                 folder = folder.key,
                 fileTitle = fileTitle,

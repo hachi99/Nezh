@@ -209,7 +209,7 @@ private fun SongRow(
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
-                    text = track.title.ifBlank { stringResource(R.string.untitled_track) },
+                    text = titleOrUntitled(track.title),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
@@ -235,7 +235,7 @@ private fun SongRow(
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_more_vert),
-                    contentDescription = stringResource(R.string.action_track_options, track.title),
+                    contentDescription = stringResource(R.string.action_track_options, titleOrUntitled(track.title)),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp),
                 )

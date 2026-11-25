@@ -38,6 +38,7 @@ import com.hachicorp.nezh.playback.technicalInfo
 import com.hachicorp.nezh.ui.NowPlayingSupport
 import com.hachicorp.nezh.ui.PlayerActions
 import com.hachicorp.nezh.ui.PlayerScreen
+import com.hachicorp.nezh.ui.titleOrUntitled
 import com.hachicorp.nezh.ui.theme.NezhTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
@@ -90,7 +91,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onAddToQueue = { track ->
                         if (playerConnection.addToQueue(track)) {
-                            val title = track.title.ifBlank { getString(R.string.untitled_track) }
+                            val title = titleOrUntitled(track.title, getString(R.string.untitled_track))
                             scope.launch {
                                 // One confirmation at a time: adding several tracks must not queue snackbars.
                                 snackbarHostState.currentSnackbarData?.dismiss()

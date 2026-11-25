@@ -181,7 +181,7 @@ private fun PlaybackMessages(state: PlaybackUiState, onRetryConnection: () -> Un
 
 @Composable
 private fun errorMessage(report: PlaybackErrorReport): String {
-    val title = report.title.ifBlank { stringResource(R.string.untitled_track) }
+    val title = titleOrUntitled(report.title)
     return when (report.kind) {
         PlaybackErrorKind.FILE -> stringResource(R.string.error_file, title, reasonText(report))
         PlaybackErrorKind.PERMISSION -> stringResource(R.string.error_permission, title)

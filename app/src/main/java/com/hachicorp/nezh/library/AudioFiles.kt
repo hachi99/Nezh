@@ -39,3 +39,12 @@ internal fun titleFromDisplayName(displayName: String): String {
     val dot = displayName.lastIndexOf('.')
     return if (dot > 0) displayName.substring(0, dot) else displayName
 }
+
+/**
+ * The title a track has: its title tag when it has text, else the title from its file name
+ * ([titleFromDisplayName]); null when there is neither. The one rule for the library and for
+ * playback (queue, current track, notification). Text is kept exactly (no trimming or
+ * normalization), so Unicode titles are unchanged. Showing "untitled" is the UI's concern.
+ */
+internal fun resolveTitle(tagTitle: String?, fileTitle: String?): String? =
+    tagTitle?.takeIf { it.isNotBlank() } ?: fileTitle?.takeIf { it.isNotBlank() }

@@ -125,7 +125,7 @@ internal fun MiniPlayerBar(playback: PlaybackUiState, actions: PlayerActions, on
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = playback.currentTitle?.ifBlank { null } ?: stringResource(R.string.untitled_track),
+                text = titleOrUntitled(playback.currentTitle),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -284,7 +284,8 @@ private fun NowPlayingContent(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = playback.currentTitle?.ifBlank { null } ?: stringResource(if (hasTrack) R.string.untitled_track else R.string.nothing_playing),
+            // "Nothing playing" is its own state (no track), not the untitled fallback.
+            text = if (hasTrack || !playback.currentTitle.isNullOrBlank()) titleOrUntitled(playback.currentTitle) else stringResource(R.string.nothing_playing),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
             maxLines = 2,

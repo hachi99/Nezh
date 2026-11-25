@@ -2,6 +2,7 @@ package com.hachicorp.nezh.library
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,5 +45,40 @@ class AudioFilesTest {
         assertEquals("Artist - Song.live", titleFromDisplayName("Artist - Song.live.flac"))
         assertEquals("Song", titleFromDisplayName("Song"))
         assertEquals(".hidden", titleFromDisplayName(".hidden"))
+    }
+
+    // --- resolveTitle: the title a track has (tag title, else file-name title) ------------------
+
+    @Test
+    fun theTagTitleWinsWhenItHasText() {
+        assertEquals("Blue Line", resolveTitle(tagTitle = "Blue Line", fileTitle = "02 - Blue Line"))
+    }
+
+    @Test
+    fun withoutATagTitleTheFileNameTitleIsUsed() {
+        assertEquals("02 - Blue Line", resolveTitle(tagTitle = null, fileTitle = "02 - Blue Line"))
+        assertEquals("02 - Blue Line", resolveTitle(tagTitle = "", fileTitle = "02 - Blue Line"))
+        assertEquals("02 - Blue Line", resolveTitle(tagTitle = "   ", fileTitle = "02 - Blue Line"))
+    }
+
+    @Test
+    fun withNeitherThereIsNoTitle() {
+        assertNull(resolveTitle(tagTitle = null, fileTitle = null))
+        assertNull(resolveTitle(tagTitle = " ", fileTitle = ""))
+    }
+
+    @Test
+    fun unicodeTitlesAreKeptExactly() {
+        val titles = listOf(
+            "ブルーライン", // Japanese
+            "Любовь", // Cyrillic
+            "حب", // Arabic (RTL)
+            "Café del Mar", // combining acute accent (decomposed e-acute)
+            "Song 🎵", // emoji outside the BMP
+        )
+        for (t in titles) {
+            assertEquals(t, resolveTitle(tagTitle = t, fileTitle = "fallback"))
+            assertEquals(t, resolveTitle(tagTitle = null, fileTitle = t))
+        }
     }
 }
