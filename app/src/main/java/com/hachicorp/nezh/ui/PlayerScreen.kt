@@ -88,13 +88,16 @@ fun PlayerScreen(
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(PlayerTab.LIBRARY.ordinal) }
     var nowPlayingOpen by rememberSaveable { mutableStateOf(false) }
+    var licensesOpen by rememberSaveable { mutableStateOf(false) }
     val hasQueue = playback.connection == ConnectionStatus.CONNECTED && playback.queue.isNotEmpty()
     // Nothing to show once the queue is gone (e.g. its last item was removed).
     if (!hasQueue && nowPlayingOpen && playback.connection == ConnectionStatus.CONNECTED) nowPlayingOpen = false
     BackHandler(enabled = nowPlayingOpen) { nowPlayingOpen = false }
+    BackHandler(enabled = licensesOpen) { licensesOpen = false }
+    val covered = nowPlayingOpen || licensesOpen
     Box(modifier = modifier.fillMaxSize()) {
-        // While Now Playing covers it, the library is hidden from accessibility services.
-        Column(modifier = Modifier.fillMaxSize().then(if (nowPlayingOpen) Modifier.clearAndSetSemantics {} else Modifier)) {
+        // While another screen covers it, the library is hidden from accessibility services.
+        Column(modifier = Modifier.fillMaxSize().then(if (covered) Modifier.clearAndSetSemantics {} else Modifier)) {
             Row(
                 modifier = Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -135,6 +138,7 @@ fun PlayerScreen(
                     onReauthorize = actions.onReauthorizeFolder,
                     onRemove = actions.onRemoveFolder,
                     onRefresh = actions.onRefreshLibrary,
+                    onOpenLicenses = { licensesOpen = true },
                     modifier = contentModifier,
                 )
             }
@@ -153,6 +157,13 @@ fun PlayerScreen(
                 onClose = { nowPlayingOpen = false },
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+        AnimatedVisibility(
+            visible = licensesOpen,
+            enter = slideInHorizontally { it },
+            exit = slideOutHorizontally { it },
+        ) {
+            LicensesScreen(onClose = { licensesOpen = false }, modifier = Modifier.fillMaxSize())
         }
     }
 }

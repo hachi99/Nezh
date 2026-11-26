@@ -1,0 +1,3 @@
+# License texts stay byte for byte as their authors published them (ThirdPartyNoticesTest checks
+# their SHA-256): no end-of-line conversion on any checkout, whatever core.autocrlf says.
+app/src/main/assets/licenses/** -text

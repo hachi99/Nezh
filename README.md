@@ -87,6 +87,10 @@ Las funciones principales de reproducción y administración de bibliotecas medi
 
 Es posible encontrar cambios frecuentes, características incompletas y errores.
 
+## Componentes de terceros
+
+Nezh incluye bibliotecas de terceros de código abierto; la app las lista, con sus licencias completas, en Carpetas → «Aviso de licencias».
+
 ## Filosofía
 
 La música es personal.

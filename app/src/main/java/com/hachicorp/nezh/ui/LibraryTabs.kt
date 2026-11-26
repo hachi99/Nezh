@@ -197,6 +197,7 @@ internal fun FoldersTab(
     onReauthorize: (LibraryFolder) -> Unit,
     onRemove: (LibraryFolder) -> Unit,
     onRefresh: () -> Unit,
+    onOpenLicenses: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var pendingRemoval by remember { mutableStateOf<LibraryFolder?>(null) }
@@ -223,6 +224,8 @@ internal fun FoldersTab(
                     onRemove = { pendingRemoval = folder },
                 )
             }
+            // Always last, with or without folders; not a folder and not part of the library.
+            item(key = LICENSES_ENTRY_KEY) { LicensesNoticeEntry(onClick = onOpenLicenses) }
         }
     }
     pendingRemoval?.let { folder ->
@@ -242,6 +245,9 @@ internal fun FoldersTab(
         )
     }
 }
+
+/** Folder items are keyed by `FolderKey(authority=…, treeDocumentId=…)`, which this cannot match. */
+private const val LICENSES_ENTRY_KEY = "licenses-notice"
 
 @Composable
 private fun FolderRow(folder: LibraryFolder, onReauthorize: () -> Unit, onRemove: () -> Unit) {
