@@ -94,6 +94,7 @@ class LicensesNoticeTest {
         compose.onNodeWithText("Carpetas").performClick()
         compose.onNodeWithText(entry).performClick()
 
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("AndroidX Media3"))
         compose.onNodeWithText("AndroidX Media3").assertIsDisplayed()
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("https://github.com/androidx/media"))
         compose.onNodeWithText("https://github.com/androidx/media").assertIsDisplayed()
@@ -108,9 +109,35 @@ class LicensesNoticeTest {
 
         // Back: text -> list -> folders.
         Espresso.pressBack()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("AndroidX Media3"))
         compose.onNodeWithText("AndroidX Media3").assertIsDisplayed()
         compose.onNodeWithContentDescription("Volver").performClick()
         compose.onNodeWithText(entry).assertIsDisplayed()
+    }
+
+    /** The Java ALAC decoder's BSD license and Hammerton's notice open as two separate, complete texts. */
+    @Test
+    fun bothAlacDecoderNoticesOpenSeparately() {
+        compose.setContent { NezhTheme { LicensesScreen(onClose = {}) } }
+
+        val hammerton = "Texto completo de la licencia de ALAC (Apple Lossless Audio Codec) decoder"
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasContentDescription(hammerton))
+        compose.onNodeWithText("Titular o autores declarados: David Hammerton").assertExists()
+        compose.onNodeWithContentDescription(hammerton).performClick()
+        compose.onNodeWithText("ALAC decoder license (David Hammerton)").assertIsDisplayed()
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Permission is hereby granted", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("Copyright (c) 2005 David Hammerton", substring = true)).assertExists()
+        compose.onNode(hasText("permission notice shall be", substring = true)).assertExists()
+        compose.onNode(hasText("OTHER DEALINGS IN THE SOFTWARE.", substring = true)).assertExists()
+        compose.onNodeWithContentDescription("Volver").performClick()
+
+        val java = "Texto completo de la licencia de Java Apple Lossless Decoder"
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasContentDescription(java))
+        compose.onNodeWithContentDescription(java).performClick()
+        compose.onNodeWithText("Java Apple Lossless Decoder license").assertIsDisplayed()
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Peter McQuillan", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("Redistributions of source code must retain", substring = true)).assertExists()
+        compose.onAllNodes(hasText("Permission is hereby granted", substring = true)).assertCountEquals(0)
     }
 
     @Test

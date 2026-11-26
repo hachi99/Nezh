@@ -23,11 +23,18 @@ python tools/fixtures/make_audio_fixtures.py
 | `wav_pcm16.wav` | script | PCM 16-bit |
 | `unsupported.mid`, `corrupt.mp3` | script | must fail as FILE errors, not crash |
 | `m4a_aac.m4a`, `aac_adts.aac`, `opus.ogg` | device, at test time | Android MediaCodec encoders |
+| `alac_16_44k_stereo.m4a`, `alac_24_96k_stereo.m4a`, `alac_16_48k_mono.m4a` | encoded elsewhere (below) | compressed ALAC: 16/24 bit, mono/stereo, last frame partial |
+| `alac_bad_prediction.m4a`, `../codecs/tone_alac_20bit.m4a` | `make_alac_variant_fixtures.py` | ALAC the Java decoder must report as an error / as unsupported |
 
 MP3 and FLAC fixtures contain digital silence (valid frames without audio data); that is enough for
 container, decoder, duration, seek and metadata checks, but not for audio-quality judgements.
-No ALAC or Ogg Vorbis fixture: neither Android nor this script can encode them. To cover them,
-add real files encoded elsewhere to the assets and to `FormatCompatibilityTest`.
+No Ogg Vorbis fixture: neither Android nor this script can encode it. To cover it, add real files
+encoded elsewhere to the assets and to `FormatCompatibilityTest`.
+
+The three compressed ALAC files were encoded with FFmpeg 6.0.1's ALAC encoder from deterministic
+WAV files (two tones plus seeded noise, 4 s 16-bit 44.1 kHz stereo, 3 s 24-bit 96 kHz stereo, 3 s
+16-bit 48 kHz mono). The SHA-256 of that source PCM is in `AlacPacketDecoderTest`, which checks
+that the Java decoder reproduces it bit for bit. No file encoded by Apple software is included.
 
 Run on any device (emulator or the Galaxy A54 with USB debugging):
 

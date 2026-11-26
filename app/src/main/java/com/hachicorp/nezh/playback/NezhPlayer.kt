@@ -37,7 +37,8 @@ internal const val EXTRA_FILE_TITLE = "com.hachicorp.nezh.FILE_TITLE"
 @OptIn(UnstableApi::class)
 internal fun buildNezhPlayer(context: Context, looper: Looper? = null): ExoPlayer {
     val extractors = DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)
-    val player = ExoPlayer.Builder(context)
+    // ALAC is decoded in Java when the device has no ALAC decoder (see NezhRenderersFactory).
+    val player = ExoPlayer.Builder(context, NezhRenderersFactory(context))
         .apply { if (looper != null) setLooper(looper) }
         .setMediaSourceFactory(DefaultMediaSourceFactory(context, extractors))
         .setAudioAttributes(

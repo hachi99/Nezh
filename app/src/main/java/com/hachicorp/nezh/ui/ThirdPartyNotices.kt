@@ -7,6 +7,8 @@ import com.hachicorp.nezh.R
 internal enum class LicenseText(val title: String, val asset: String) {
     APACHE_2_0("Apache License, Version 2.0", "licenses/Apache-2.0.txt"),
     MIT_CHECKER_FRAMEWORK("MIT License (Checker Framework qualifiers)", "licenses/MIT-checker-qual.txt"),
+    JAVA_ALAC_DECODER("Java Apple Lossless Decoder license", "licenses/BSD-java-alac-decoder.txt"),
+    HAMMERTON_ALAC_DECODER("ALAC decoder license (David Hammerton)", "licenses/Hammerton-ALAC-decoder.txt"),
 }
 
 /** A third-party component acknowledged on the license notice screen. */
@@ -28,11 +30,38 @@ internal data class ThirdPartyComponent(
 
 /**
  * What Nezh ships from third parties: the release runtime classpath (`gradlew :app:dependencies
- * --configuration releaseRuntimeClasspath`; licenses and authors from each POM) and the Material
- * icons in res/drawable. The library list assets are a snapshot of that classpath:
+ * --configuration releaseRuntimeClasspath`; licenses and authors from each POM), the Material
+ * icons in res/drawable and the Java Apple Lossless Decoder core included as source
+ * (third_party/java-alac-decoder). The library list assets are a snapshot of that classpath:
  * regenerate them when dependencies change.
  */
 internal val thirdPartyComponents: List<ThirdPartyComponent> = listOf(
+    ThirdPartyComponent(
+        name = "Java Apple Lossless Decoder",
+        version = "afd5bf3 (2014-04-19)",
+        holder = "Peter McQuillan",
+        licenseName = "BSD Software License",
+        license = LicenseText.JAVA_ALAC_DECODER,
+        // license.txt, lines 1 and 3.
+        copyright = listOf(
+            "Copyright (c) 2011-2014 Peter McQuillan",
+            "Based on the ALAC decoder - Copyright (c) 2005 David Hammerton",
+        ),
+        description = R.string.licenses_java_alac_description,
+        links = listOf("https://github.com/soiaf/Java-Apple-Lossless-decoder"),
+    ),
+    // The original decoder the Java one is ported from: its own notice, shown on its own.
+    ThirdPartyComponent(
+        name = "ALAC (Apple Lossless Audio Codec) decoder",
+        // The version the Java decoder was ported from (its README).
+        version = "0.2.0",
+        holder = "David Hammerton",
+        licenseName = "MIT-style permission notice",
+        license = LicenseText.HAMMERTON_ALAC_DECODER,
+        copyright = listOf("Copyright (c) 2005 David Hammerton"),
+        description = R.string.licenses_hammerton_alac_description,
+        links = listOf("http://crazney.net/programs/itunes/alac.html"),
+    ),
     ThirdPartyComponent(
         name = "AndroidX Media3",
         version = "1.11.1",

@@ -23,12 +23,17 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * A file whose audio no decoder on the device can play (here ALAC, as "Blue Line" on the Moto G7
- * Plus) must be reported and skipped, or stop playback with a message: never "play" in silence.
- * Also checks that WAV and MP3 next to it play with a real audio track.
+ * A file whose audio no decoder can play must be reported and skipped, or stop playback with a
+ * message: never "play" in silence. Also checks that WAV and MP3 next to it play with a real audio
+ * track.
  *
- * Fixtures: assets/codecs (tools/fixtures/make_codec_fixtures.py). Skipped on devices that do have
- * an ALAC decoder, where the file is expected to play.
+ * The example is ALAC with 20-bit samples: Nezh's Java ALAC decoder handles 16 and 24 bit only (16
+ * and 24-bit ALAC now play on every device, see FormatCompatibilityTest), and the test runs only on
+ * devices without an ALAC decoder of their own. It also checks that ALAC data the Java decoder
+ * cannot decode (an unsupported prediction type) is reported as a decoding error and skipped.
+ *
+ * Fixtures: assets/codecs (tools/fixtures/make_codec_fixtures.py) and the ALAC variants of
+ * tools/fixtures/make_alac_variant_fixtures.py. Skipped on devices that have an ALAC decoder.
  */
 @RunWith(AndroidJUnit4::class)
 class UnsupportedCodecTest {
@@ -36,7 +41,13 @@ class UnsupportedCodecTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val tree = DocumentsContract.buildTreeDocumentUri(TestTreeProvider.AUTHORITY, "codec")
-    private val assets = listOf("tone_alac.m4a", "tone_pcm.wav", "tone_mp3.mp3")
+    /** Document name -> test asset. */
+    private val assets = mapOf(
+        "tone_alac_20bit.m4a" to "codecs/tone_alac_20bit.m4a",
+        "alac_bad_prediction.m4a" to "formats/alac_bad_prediction.m4a",
+        "tone_pcm.wav" to "codecs/tone_pcm.wav",
+        "tone_mp3.mp3" to "codecs/tone_mp3.mp3",
+    )
     private val connections = ArrayList<PlayerConnection>()
     private lateinit var connection: PlayerConnection
 
@@ -51,7 +62,8 @@ class UnsupportedCodecTest {
         )
     }
 
-    private val alac = track("tone_alac.m4a")
+    private val alac = track("tone_alac_20bit.m4a")
+    private val badAlac = track("alac_bad_prediction.m4a")
     private val wav = track("tone_pcm.wav")
     private val mp3 = track("tone_mp3.mp3")
 
@@ -61,9 +73,9 @@ class UnsupportedCodecTest {
             !info.isEncoder && info.supportedTypes.any { it.equals("audio/alac", ignoreCase = true) }
         }
         assumeFalse("This device can decode ALAC", hasAlacDecoder)
-        val spec = assets.joinToString("\n") { asset ->
-            val size = instrumentation.context.assets.open("codecs/$asset").use { it.readBytes().size }
-            "codec/$asset|$size|1|codecs/$asset"
+        val spec = assets.entries.joinToString("\n") { (name, asset) ->
+            val size = instrumentation.context.assets.open(asset).use { it.readBytes().size }
+            "codec/$name|$size|1|$asset"
         }
         context.contentResolver.call(Uri.parse("content://${TestTreeProvider.AUTHORITY}"), TestTreeProvider.METHOD_SET, spec, null)
         connection = connect()
@@ -155,6 +167,18 @@ class UnsupportedCodecTest {
         val other = connect()
         SystemClock.sleep(1_000) // the error request is answered asynchronously
         assertEquals(null, onMain { other.state.value.error })
+    }
+
+    @Test
+    fun alacDataTheDecoderCannotDecodeIsReportedAsADecodingErrorAndSkipped() {
+        play(listOf(badAlac, wav))
+        waitUntil("the WAV after the damaged ALAC file plays", timeoutMs = 20_000) { audiblyPlaying(wav) }
+        val report = onMain { connection.state.value.lastSkipped }
+        assertNotNull("the ALAC file was reported", report)
+        report!!
+        assertEquals(badAlac.id, report.mediaId)
+        assertEquals(PlaybackErrorStage.DECODER, report.stage)
+        assertEquals("ERROR_CODE_DECODING_FAILED", report.code)
     }
 
     private fun assertPausedAndNotAdvancing() {

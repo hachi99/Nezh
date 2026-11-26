@@ -130,6 +130,8 @@
     <string name="licenses_show_libraries_of">Bibliotecas incluidas en %1$s</string>
     <string name="licenses_load_error">No se pudo cargar este texto.</string>
     <string name="action_back">Volver</string>
+    <string name="licenses_java_alac_description">Decodifica los archivos ALAC (Apple Lossless) cuando el dispositivo no tiene un decodificador propio. Nezh incluye las cuatro clases del núcleo de decodificación (AlacDecodeUtils, AlacFile, LeadingZeros y Defines) de ese proyecto, que incorporan contribuciones de Denis Tulskiy (2011). Nezh modificó AlacDecodeUtils para que los datos que no puede decodificar se informen como error en lugar de producir audio incorrecto.</string>
+    <string name="licenses_hammerton_alac_description">Decodificador ALAC original en el que se basa el Java Apple Lossless Decoder, que es una adaptación a Java de su versión 0.2.0. Su aviso de licencia se reproduce aquí por separado.</string>
     <string name="licenses_media3_description">Reproductor (ExoPlayer), sesión multimedia y lectura de formatos de audio.</string>
     <string name="licenses_androidx_description">Interfaz (Jetpack Compose y Material 3), ciclo de vida, base de datos (Room) y otras bibliotecas de Android Jetpack.</string>
     <string name="licenses_guava_description">Biblioteca de utilidades usada por Nezh y por Media3.</string>

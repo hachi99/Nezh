@@ -1,0 +1,72 @@
+diff --git a/com/beatofthedrum/alacdecoder/AlacDecodeUtils.java b/com/beatofthedrum/alacdecoder/AlacDecodeUtils.java
+index b0fb340..dfd6d79 100644
+--- a/com/beatofthedrum/alacdecoder/AlacDecodeUtils.java
++++ b/com/beatofthedrum/alacdecoder/AlacDecodeUtils.java
+@@ -8,6 +8,12 @@
+ ** Distributed under the BSD Software License (see license.txt)  
+ **
+ */
++/*
++** Modified for Nezh (2026): unsupported prediction types and sample sizes throw instead of
++** printing a message to standard error (D2), and a run of zeros may not run past the end of
++** the frame (D5).
++** The changes are listed in third_party/java-alac-decoder/NEZH-CHANGES.md.
++*/
+ package com.beatofthedrum.alacdecoder;
+ 
+ class AlacDecodeUtils
+@@ -325,6 +331,9 @@ class AlacDecodeUtils
+ 				// got blockSize 0s
+ 				if (blockSize > 0)
+ 				{
++					// Nezh (D5): a run of zeros may not run past the end of the frame.
++					if (blockSize > outputSize - outputCount - 1)
++						throw new IllegalStateException("run of " + blockSize + " zeros past the end of the frame");
+ 					int countSize  = 0;
+ 					countSize = blockSize;
+ 					for (int j = 0; j < countSize; j++)
+@@ -693,7 +702,7 @@ class AlacDecodeUtils
+ 				}
+ 				else
+ 				{
+-					System.err.println("FIXME: unhandled predicition type: " +prediction_type);
++					throw new IllegalStateException("unhandled prediction type: " + prediction_type); // Nezh (D2): was a message to standard error
+ 					
+ 					/* i think the only other prediction type (or perhaps this is just a
+ 					 * boolean?) runs adaptive fir twice.. like:
+@@ -794,7 +803,7 @@ class AlacDecodeUtils
+ 			}
+ 			case 20:
+ 			case 32:
+-				System.err.println("FIXME: unimplemented sample size " + alac.setinfo_sample_size);
++				throw new IllegalStateException("unimplemented sample size " + alac.setinfo_sample_size); // Nezh (D2): was a message to standard error
+ 			default:
+ 
+ 			}
+@@ -914,7 +923,7 @@ class AlacDecodeUtils
+ 				}
+ 				else
+ 				{ // see mono case
+-					System.err.println("FIXME: unhandled predicition type: " + prediction_type_a);
++					throw new IllegalStateException("unhandled prediction type: " + prediction_type_a); // Nezh (D2): was a message to standard error
+ 				}
+ 
+ 				/* channel 2 */
+@@ -926,7 +935,7 @@ class AlacDecodeUtils
+ 				}
+ 				else
+ 				{
+-					System.err.println("FIXME: unhandled predicition type: " + prediction_type_b);
++					throw new IllegalStateException("unhandled prediction type: " + prediction_type_b); // Nezh (D2): was a message to standard error
+ 				}
+ 			}
+ 			else
+@@ -997,7 +1006,7 @@ class AlacDecodeUtils
+ 			}
+ 			case 20:
+ 			case 32:
+-				System.err.println("FIXME: unimplemented sample size " + alac.setinfo_sample_size);
++				throw new IllegalStateException("unimplemented sample size " + alac.setinfo_sample_size); // Nezh (D2): was a message to standard error
+ 
+ 			default:
+ 

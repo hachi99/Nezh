@@ -21,6 +21,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hachicorp.nezh.library.FolderKey
 import com.hachicorp.nezh.library.Track
+import com.hachicorp.nezh.playback.alac.AlacDecoder
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -91,6 +92,10 @@ class FormatCompatibilityTest {
             Fixture("flac_tagged.flac", 19_969, expectTags = true, essential = Build.VERSION.SDK_INT >= 27, expectedTitle = "Título FLAC"),
             Fixture("flac_untagged.flac", 19_969, essential = Build.VERSION.SDK_INT >= 27),
             Fixture("wav_pcm16.wav", 5_000),
+            // Compressed ALAC: the device's decoder if it has one, else Nezh's Java decoder; essential.
+            Fixture("alac_16_44k_stereo.m4a", 4_000, essential = true, note = "ALAC 16 bits 44,1 kHz estéreo"),
+            Fixture("alac_24_96k_stereo.m4a", 3_000, essential = true, note = "ALAC 24 bits 96 kHz estéreo"),
+            Fixture("alac_16_48k_mono.m4a", 3_000, essential = true, note = "ALAC 16 bits 48 kHz mono"),
             Fixture("unsupported.mid", null, expectError = true),
             Fixture("corrupt.mp3", null, expectError = true),
         )
@@ -122,6 +127,13 @@ class FormatCompatibilityTest {
             if (fixture.expectError && row.playable) failures += "${fixture.name}: se esperaba error"
             if (fixture.expectTags && row.playable && row.artist.isBlank()) failures += "${fixture.name}: etiquetas no extraídas"
             if (row.playable && row.title != fixture.expectedTitle) failures += "${fixture.name}: título '${row.title}', se esperaba '${fixture.expectedTitle}'"
+            // The Java ALAC decoder is only a fallback for ALAC: other formats keep their decoders,
+            // and without a device ALAC decoder ALAC must go through it.
+            val alac = fixture.name.startsWith("alac_")
+            if (row.playable && !alac && row.decoder == AlacDecoder.NAME) failures += "${fixture.name}: decodificado por ${AlacDecoder.NAME}"
+            if (row.playable && alac && !deviceDecodesAlac && row.decoder != AlacDecoder.NAME) {
+                failures += "${fixture.name}: se esperaba ${AlacDecoder.NAME}, decodificador ${row.decoder}"
+            }
         }
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
@@ -242,6 +254,9 @@ class FormatCompatibilityTest {
             Log.i(TAG, "| ${r.fixture} | ${r.config} | ${r.playable} | ${r.decoder} | ${r.error} | ${r.durationMs ?: "desconocida"} (${r.expectedMs ?: "-"}) | $err | ${r.seekable} | ${r.midSeekOk} | ${r.endAfterSeekMs ?: "-"} | ${r.fullPlaybackOk} | ${r.decoderInits} | ${r.title} | ${r.artist} | ${r.album} | ${r.artworkBytes} |")
         }
     }
+
+    /** Whether Android itself has an ALAC decoder (then it takes ALAC and the Java decoder is not used). */
+    private val deviceDecodesAlac get() = DeviceAudioEncoder.decoders("audio/alac").isNotEmpty()
 
     private companion object {
         const val TAG = "NezhFormatMatrix"
